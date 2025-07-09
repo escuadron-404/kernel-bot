@@ -56,7 +56,7 @@ su - ec2-user -c "
   # --- PM2 Process Management ---
   echo \"Managing PM2 process for Discord bot...\"
   # Use pm2 restart/start to ensure it's running
-  pm2 restart index.js --name \"discord-bot\" || pm2 start index.js --name \"discord-bot\" || {
+  pm2 restart src/index.js --name \"discord-bot\" || pm2 start src/index.js --name \"discord-bot\" || {
     echo \"PM2 operation failed for Discord bot\"
     exit 1
   }
