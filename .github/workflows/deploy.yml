@@ -62,7 +62,7 @@ jobs:
       id: ssm_command_execution
       run: |
         REMOTE_SCRIPT_PATH="/home/ec2-user/discord-bot/deploy_assets/deploy_discord_bot.sh"
-        EC2_SHELL_COMMAND="export BOT_TOKEN=\"${{ secrets.BOT_TOKEN }}\" && \
+        EC2_SHELL_COMMAND="export DISCORD_TOKEN=\"${{ secrets.DISCORD_TOKEN }}\" && \
                            export CLIENT_ID=\"${{ secrets.CLIENT_ID }}\" && \
                            export GUILD_ID=\"${{ secrets.GUILD_ID }}\" && \
                            /bin/bash ${REMOTE_SCRIPT_PATH}"

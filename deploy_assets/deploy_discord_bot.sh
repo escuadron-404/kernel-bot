@@ -47,7 +47,7 @@ su - ec2-user -c "
 
   # --- Environment Variables (.env file) ---
   echo \"Updating .env file with secrets...\"
-  echo \"BOT_TOKEN=$BOT_TOKEN\" >.env
+  echo \"DISCORD_TOKEN=$DISCORD_TOKEN\" >.env
   echo \"CLIENT_ID=$CLIENT_ID\" >>.env
   echo \"GUILD_ID=$GUILD_ID\" >>.env
   echo \"DISCORD_BOT_WEB_PORT=$DISCORD_BOT_WEB_PORT\" >>.env
