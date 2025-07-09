@@ -91,13 +91,13 @@ jobs:
       id: ssm_output_check
       run: |
         INSTANCE_ID=${{ env.INSTANCE_ID }}
-        echo "Waiting for SSM command (${{ steps.ssm_command_execution.outputs.command_id }}) to complete on $INSTANCE_ID..."
+        echo "Waiting for SSM command (${{ env.COMMAND_ID }}) to complete on $INSTANCE_ID..."
         MAX_ATTEMPTS=60 
         ATTEMPT=0
         STATUS=""
         while [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; do
           STATUS=$(aws ssm list-command-invocations \
-            --command-id "${{ steps.ssm_command_execution.outputs.command_id }}" \
+            --command-id "${{ env.COMMAND_ID }}" \
             --instance-id "$INSTANCE_ID" \
             --query "CommandInvocations[0].Status" \
             --output text)
