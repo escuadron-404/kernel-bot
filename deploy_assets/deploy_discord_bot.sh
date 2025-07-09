@@ -62,13 +62,6 @@ su - ec2-user -c "
   }
   echo \"Discord bot restarted/started with PM2.\"
 
-  # --- Discord Slash Commands Reload ---
-  echo \"Reloading Discord slash commands...\"
-  node \"$BOT_DIR/scripts/deploy-commands.js\" || {
-    echo \"Discord command deployment failed\"
-    exit 1
-  }
-  echo \"Discord commands reloaded.\"
 " || {
   echo "Critical application deployment steps failed as ec2-user. See above errors."
   exit 1
