@@ -4,11 +4,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 // Make sure process.env.DISCORD_CLIENT_ID is set in your .env or secrets
-const CLIENT_ID = process.env.DISCORD_CLIENT_ID;
-const GUILD_ID = process.env.DISCORD_GUILD_ID; // If deploying guild-specific commands
+const CLIENT_ID = process.env.CLIENT_ID;
+const GUILD_ID = process.env.GUILD_ID; // If deploying guild-specific commands
 
 if (!CLIENT_ID) {
-	console.error("DISCORD_CLIENT_ID is not set. Cannot deploy commands.");
+	console.error("CLIENT_ID is not set. Cannot deploy commands.");
 	process.exit(1);
 }
 
