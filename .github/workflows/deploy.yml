@@ -7,7 +7,17 @@ on:
 
 jobs:
   lint:
-    # ... (ESLint job as before) ...
+    name: Lint with biome
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        node-version: '24'
+    - name: Install
+      run: npm install
+    - name: Run
+      run: npm run lint
 
   deploy:
     name: Deploy Discord Bot to EC2 via SSM
