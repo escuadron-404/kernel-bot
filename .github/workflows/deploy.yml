@@ -1,0 +1,106 @@
+name: Deploy Discord Bot
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  lint:
+    # ... (ESLint job as before) ...
+
+  deploy:
+    name: Deploy Discord Bot to EC2 via SSM
+    runs-on: ubuntu-latest
+    needs: lint
+    environment: production # Good practice to define environments for production deployments
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    # --- Shared AWS Creds and Instance ID Lookup (copy from above) ---
+    - name: Configure AWS Credentials
+      uses: aws-actions/configure-aws-credentials@v4
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: us-east-1
+
+    - name: Get EC2 Instance ID by Tag
+      id: get_instance_id
+      run: |
+        INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Backend404Instance" "Name=instance-state-name,Values=running" --query "Reservations[0].Instances[0].InstanceId" --output text)
+        if [ -z "$INSTANCE_ID" ]; then echo "Error: No running instance found with Name tag 'Backend404Instance'."; exit 1; fi
+        echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
+        echo "Found Instance ID: $INSTANCE_ID"
+      shell: bash
+    # --- End Shared Steps ---
+
+    - name: Deploy Discord Bot and Reload Nginx via SSM
+      uses: aws-actions/aws-systems-manager-run-command@v1
+      with:
+        instance-ids: ${{ env.INSTANCE_ID }}
+        command: |
+          #!/bin/bash
+          export NVM_DIR="/home/ec2-user/.nvm"
+          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
+          [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+
+          BOT_DIR="/home/ec2-user/discord-bot"
+          NGINX_CONF_FILE="/etc/nginx/conf.d/discord-bot.conf" # Unique Nginx config file for this project
+          DISCORD_BOT_WEB_PORT=3000 # Must match port in your index.js
+
+          echo "--- Deploying Discord Bot ---"
+          mkdir -p "$BOT_DIR"
+          cd "$BOT_DIR" || { echo "Failed to change directory to $BOT_DIR"; exit 1; }
+
+          # Update .env for Discord bot
+          echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" > .env
+          echo "CLIENT_ID=${{ secrets.CLIENT_ID }}" >> .env
+          echo "GUILD_ID=${{ secrets.GUILD_ID }}" >> .env # Optional
+          echo "DISCORD_BOT_WEB_PORT=$DISCORD_BOT_WEB_PORT" >> .env
+          echo "Environment variables for Discord bot updated."
+
+          git pull origin main || { echo "Git pull failed for Discord bot"; exit 1; }
+          npm install || { echo "npm install failed for Discord bot"; exit 1; }
+
+          # Manage PM2 for Discord bot
+          su - ec2-user -c "cd $BOT_DIR && pm2 restart index.js --name \"discord-bot\" || pm2 start index.js --name \"discord-bot\"" || { echo "PM2 operation failed for Discord bot"; exit 1; }
+          echo "Discord bot restarted/started with PM2."
+
+          # Reload Discord slash commands
+          su - ec2-user -c "node $BOT_DIR/scripts/deploy-commands.js" || { echo "Discord command deployment failed"; exit 1; }
+          echo "Discord commands reloaded."
+
+          # --- Nginx Configuration for Discord Bot ---
+          echo "Updating Nginx configuration for Discord bot..."
+          # This configures a path-based proxy for the Discord bot's web backend
+          sudo tee "$NGINX_CONF_FILE" > /dev/null <<EOF
+          # Discord Bot Backend (listening on $DISCORD_BOT_WEB_PORT)
+          location /discord-bot/ { # Public URL path
+              proxy_pass http://127.0.0.1:$DISCORD_BOT_WEB_PORT/; # Proxy to internal Node.js app
+              rewrite ^/discord-bot/(.*)$ /$1 break; # Rewrite path to remove /discord-bot/
+              proxy_http_version 1.1;
+              proxy_set_header Upgrade \$http_upgrade;
+              proxy_set_header Connection 'upgrade';
+              proxy_set_header Host \$host;
+              proxy_set_header X-Real-IP \$remote_addr;
+              proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto \$scheme;
+          }
+          EOF
+          echo "Nginx config snippet for Discord bot written."
+
+          # Test and reload Nginx
+          if sudo nginx -t; then
+              echo "Nginx configuration valid. Reloading Nginx..."
+              sudo systemctl reload nginx || { echo "Nginx reload failed."; exit 1; }
+              echo "Nginx reloaded successfully."
+          else
+              echo "Nginx configuration test failed for Discord bot. Check logs."
+              exit 1
+          fi
+
+          echo "--- Discord Bot Deployment Complete! ---"
+        timeout-seconds: 600
