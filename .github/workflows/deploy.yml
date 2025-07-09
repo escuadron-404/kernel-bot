@@ -16,12 +16,12 @@ jobs:
     - name: Node
       uses: actions/setup-node@v4
       with:
-        node-version: '24.4.0'
+        node-version: '24.4.0' 
 
     - name: Install
       run: npm install
 
-    - name: Run
+    - name: Run lint
       run: npm run lint
 
   deploy:
@@ -34,9 +34,8 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # --- Shared AWS Creds and Instance ID Lookup (copy from above) ---
     - name: Configure AWS Credentials
-      uses: aws-actions/configure-aws-credentials@v4
+      uses: aws-actions/configure-aws-credentials@v4 # Use v4 for latest compatibility
       with:
         aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
         aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
@@ -45,32 +44,45 @@ jobs:
     - name: Get EC2 Instance ID by Tag
       id: get_instance_id
       run: |
-        INSTANCE_ID=$(aws ec2 describe-instances --filters "Name=tag:Name,Values=Backend404Instance" "Name=instance-state-name,Values=running" --query "Reservations[0].Instances[0].InstanceId" --output text)
-        if [ -z "$INSTANCE_ID" ]; then echo "Error: No running instance found with Name tag 'Backend404Instance'."; exit 1; fi
+        # IMPORTANT: Updated tag name to 'Backend404Instance'
+        INSTANCE_ID=$(aws ec2 describe-instances \
+          --filters "Name=tag:Name,Values=Backend404Instance" "Name=instance-state-name,Values=running" \
+          --query "Reservations[0].Instances[0].InstanceId" --output text)
+        
+        if [ -z "$INSTANCE_ID" ]; then 
+          echo "Error: No running instance found with Name tag 'Backend404Instance'."
+          exit 1
+        fi
+        
         echo "INSTANCE_ID=$INSTANCE_ID" >> $GITHUB_ENV
         echo "Found Instance ID: $INSTANCE_ID"
       shell: bash
-    # --- End Shared Steps ---
-
-    - name: Deploy Discord Bot and Reload Nginx via SSM
-      uses: aws-actions/aws-systems-manager-run-command@v1
-      with:
-        instance-ids: ${{ env.INSTANCE_ID }}
-        command: |
+    
+    # --- Start SSM Deployment using aws ssm send-command ---
+    - name: Execute deployment commands via SSM
+      id: ssm_command_execution # Give this step an ID to reference its outputs
+      run: |
+        # Define your multi-line deployment script here
+        # Make sure to escape internal double quotes if they conflict with the 'commands' array
+        # It's often easier to define the script in a variable for readability.
+        read -r -d '' DEPLOY_SCRIPT << 'EOF'
           #!/bin/bash
+          # Ensure NVM is sourced for Node.js/npm commands. This assumes ec2-user's .bashrc contains NVM setup.
           export NVM_DIR="/home/ec2-user/.nvm"
-          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"
-          [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"
+          [ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
+          [ -s "$NVM_DIR/bash_completion" ] && \. "$NVM_DIR/bash_completion"  # This loads nvm bash_completion
 
           BOT_DIR="/home/ec2-user/discord-bot"
           NGINX_CONF_FILE="/etc/nginx/conf.d/discord-bot.conf" # Unique Nginx config file for this project
           DISCORD_BOT_WEB_PORT=3000 # Must match port in your index.js
 
-          echo "--- Deploying Discord Bot ---"
+          echo "--- Starting Deployment for Discord Bot on EC2 Instance ---"
+
+          # Create bot directory if it doesn't exist and navigate into it
           mkdir -p "$BOT_DIR"
           cd "$BOT_DIR" || { echo "Failed to change directory to $BOT_DIR"; exit 1; }
 
-          # Update .env for Discord bot
+          # Update .env for Discord bot (using new secret names: BOT_TOKEN, CLIENT_ID, GUILD_ID)
           echo "BOT_TOKEN=${{ secrets.BOT_TOKEN }}" > .env
           echo "CLIENT_ID=${{ secrets.CLIENT_ID }}" >> .env
           echo "GUILD_ID=${{ secrets.GUILD_ID }}" >> .env # Optional
@@ -80,7 +92,9 @@ jobs:
           git pull origin main || { echo "Git pull failed for Discord bot"; exit 1; }
           npm install || { echo "npm install failed for Discord bot"; exit 1; }
 
-          # Manage PM2 for Discord bot
+          # Manage PM2 process for Discord bot
+          # Run PM2 commands as the ec2-user, since NVM is setup for that user.
+          # 'su - ec2-user -c' runs the command as ec2-user within their login environment.
           su - ec2-user -c "cd $BOT_DIR && pm2 restart index.js --name \"discord-bot\" || pm2 start index.js --name \"discord-bot\"" || { echo "PM2 operation failed for Discord bot"; exit 1; }
           echo "Discord bot restarted/started with PM2."
 
@@ -91,31 +105,96 @@ jobs:
           # --- Nginx Configuration for Discord Bot ---
           echo "Updating Nginx configuration for Discord bot..."
           # This configures a path-based proxy for the Discord bot's web backend
-          sudo tee "$NGINX_CONF_FILE" > /dev/null <<EOF
-          # Discord Bot Backend (listening on $DISCORD_BOT_WEB_PORT)
+          # Note: The EOF must be on its own line and match the start tag.
+          sudo tee "$NGINX_CONF_FILE" > /dev/null <<'NGINX_CONF'
+          # Discord Bot Backend (listening on 3000)
           location /discord-bot/ { # Public URL path
-              proxy_pass http://127.0.0.1:$DISCORD_BOT_WEB_PORT/; # Proxy to internal Node.js app
+              proxy_pass http://127.0.0.1:3000/; # Proxy to internal Node.js app (hardcoded for Nginx snippet)
               rewrite ^/discord-bot/(.*)$ /$1 break; # Rewrite path to remove /discord-bot/
               proxy_http_version 1.1;
-              proxy_set_header Upgrade \$http_upgrade;
+              proxy_set_header Upgrade $http_upgrade;
               proxy_set_header Connection 'upgrade';
-              proxy_set_header Host \$host;
-              proxy_set_header X-Real-IP \$remote_addr;
-              proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-              proxy_set_header X-Forwarded-Proto \$scheme;
+              proxy_set_header Host $host;
+              proxy_set_header X-Real-IP $remote_addr;
+              proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              proxy_set_header X-Forwarded-Proto $scheme;
           }
-          EOF
+          NGINX_CONF
           echo "Nginx config snippet for Discord bot written."
 
-          # Test and reload Nginx
+          # Test Nginx configuration and reload if successful
+          echo "Testing Nginx configuration..."
           if sudo nginx -t; then
               echo "Nginx configuration valid. Reloading Nginx..."
               sudo systemctl reload nginx || { echo "Nginx reload failed."; exit 1; }
               echo "Nginx reloaded successfully."
           else
-              echo "Nginx configuration test failed for Discord bot. Check logs."
-              exit 1
+              echo "Nginx configuration test failed. Check logs."
+              exit 1 # Fail the SSM command if Nginx config is bad
           fi
 
           echo "--- Discord Bot Deployment Complete! ---"
-        timeout-seconds: 600
+        EOF
+
+        # Send the command to the EC2 instance via SSM
+        COMMAND_ID=$(aws ssm send-command \
+          --instance-ids ${{ env.INSTANCE_ID }} \
+          --document-name "AWS-RunShellScript" \
+          --parameters "commands=$DEPLOY_SCRIPT" \
+          --timeout-seconds 600 \
+          --comment "Deploying Discord Bot from GitHub Actions" \
+          --query "Command.CommandId" \
+          --output text)
+
+        echo "SSM Command ID: $COMMAND_ID"
+        echo "::set-output name=command_id::$COMMAND_ID" # Store Command ID for the next step
+      shell: bash
+
+    - name: Wait for and Check SSM Command Output
+      id: ssm_output_check
+      # This step will periodically check the status of the SSM command
+      # and fail the workflow if the remote command fails.
+      run: |
+        COMMAND_ID=${{ steps.ssm_command_execution.outputs.command_id }}
+        INSTANCE_ID=${{ env.INSTANCE_ID }}
+        
+        echo "Waiting for SSM command ($COMMAND_ID) to complete on $INSTANCE_ID..."
+        
+        # Loop to check command status
+        MAX_ATTEMPTS=60 # Roughly 5 minutes (60 * 5 seconds)
+        ATTEMPT=0
+        while [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; do
+          STATUS=$(aws ssm list-command-invocations \
+            --command-id "$COMMAND_ID" \
+            --instance-id "$INSTANCE_ID" \
+            --query "CommandInvocations[0].Status" \
+            --output text)
+          
+          if [ "$STATUS" == "Success" ]; then
+            echo "SSM Command completed successfully."
+            break
+          elif [ "$STATUS" == "Failed" ] || [ "$STATUS" == "Cancelled" ]; then
+            echo "SSM Command failed or was cancelled. See detailed output below."
+            exit 1 # Fail the GitHub Actions job
+          else
+            echo "Current status: $STATUS. Waiting..."
+            sleep 5 # Wait 5 seconds before checking again
+            ATTEMPT=$((ATTEMPT + 1))
+          fi
+        done
+
+        if [ "$STATUS" != "Success" ]; then
+          echo "SSM Command did not complete within the expected time. Force failing."
+          exit 1
+        fi
+
+        # Fetch and print the full command output
+        echo "--- SSM Command Full Output ---"
+        aws ssm list-command-invocations \
+          --command-id "$COMMAND_ID" \
+          --instance-id "$INSTANCE_ID" \
+          --details \
+          --query "CommandInvocations[].CommandPlugins[].{Output:Output}" \
+          --output text
+        echo "--- End SSM Command Full Output ---"
+      shell: bash
