@@ -62,9 +62,6 @@ jobs:
     - name: Execute deployment commands via SSM
       id: ssm_command_execution # Give this step an ID to reference its outputs
       run: |
-        # Define your multi-line deployment script here
-        # Make sure to escape internal double quotes if they conflict with the 'commands' array
-        # It's often easier to define the script in a variable for readability.
         read -r -d '' DEPLOY_SCRIPT << 'EOF'
           #!/bin/bash
           # Ensure NVM is sourced for Node.js/npm commands. This assumes ec2-user's .bashrc contains NVM setup.
@@ -145,9 +142,8 @@ jobs:
           --comment "Deploying Discord Bot from GitHub Actions" \
           --query "Command.CommandId" \
           --output text)
-
         echo "SSM Command ID: $COMMAND_ID"
-        echo "::set-output name=command_id::$COMMAND_ID" # Store Command ID for the next step
+        echo "::set-output name=command_id::$COMMAND_ID" 
       shell: bash
 
     - name: Wait for and Check SSM Command Output
@@ -159,9 +155,7 @@ jobs:
         INSTANCE_ID=${{ env.INSTANCE_ID }}
         
         echo "Waiting for SSM command ($COMMAND_ID) to complete on $INSTANCE_ID..."
-        
-        # Loop to check command status
-        MAX_ATTEMPTS=60 # Roughly 5 minutes (60 * 5 seconds)
+        MAX_ATTEMPTS=60 
         ATTEMPT=0
         while [ "$ATTEMPT" -lt "$MAX_ATTEMPTS" ]; do
           STATUS=$(aws ssm list-command-invocations \
@@ -175,20 +169,17 @@ jobs:
             break
           elif [ "$STATUS" == "Failed" ] || [ "$STATUS" == "Cancelled" ]; then
             echo "SSM Command failed or was cancelled. See detailed output below."
-            exit 1 # Fail the GitHub Actions job
+            exit 1 
           else
             echo "Current status: $STATUS. Waiting..."
-            sleep 5 # Wait 5 seconds before checking again
+            sleep 5 
             ATTEMPT=$((ATTEMPT + 1))
           fi
         done
-
         if [ "$STATUS" != "Success" ]; then
           echo "SSM Command did not complete within the expected time. Force failing."
           exit 1
         fi
-
-        # Fetch and print the full command output
         echo "--- SSM Command Full Output ---"
         aws ssm list-command-invocations \
           --command-id "$COMMAND_ID" \
