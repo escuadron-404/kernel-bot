@@ -44,6 +44,7 @@ jobs:
     - name: Get EC2 Instance ID by Tag
       id: get_instance_id
       run: |
+        # IMPORTANT: Updated tag name to 'Backend404Instance'
         INSTANCE_ID=$(aws ec2 describe-instances \
           --filters "Name=tag:Name,Values=Backend404Instance" "Name=instance-state-name,Values=running" \
           --query "Reservations[0].Instances[0].InstanceId" --output text)
@@ -59,51 +60,32 @@ jobs:
 
     - name: Execute deployment script via SSM
       id: ssm_command_execution
-      # Pass secrets as environment variables to the remote script
-      env:
-        BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-        CLIENT_ID: ${{ secrets.CLIENT_ID }}
-        GUILD_ID: ${{ secrets.GUILD_ID }} # Optional
-        # DISCORD_BOT_WEB_PORT is hardcoded in the .sh script and Nginx config,
-        # but you could pass it here if you want it configurable via env.
       run: |
         REMOTE_SCRIPT_PATH="/home/ec2-user/discord-bot/deploy_assets/deploy_discord_bot.sh"
-        COMMAND_ID=$(aws ssm send-command \
-          --instance-ids ${{ env.INSTANCE_ID }} \
-          --document-name "AWS-RunShellScript" \
-          --parameters "commands=bash $REMOTE_SCRIPT_PATH" \
-          --timeout-seconds 600 \
-          --comment "Deploying Discord Bot from GitHub Actions" \
-          --output text \
-          --cli-input-json '{
-            "Parameters": {
-              "commands": ["bash '"${REMOTE_SCRIPT_PATH}"'"],
-              "environment": [
-                "BOT_TOKEN='"${{ env.BOT_TOKEN }}"'",
-                "CLIENT_ID='"${{ env.CLIENT_ID }}"'",
-                "GUILD_ID='"${{ env.GUILD_ID }}"'"
-              ]
-            }
-          }' \
-          --query "Command.CommandId"
-        )
-        DEPLOYMENT_COMMAND="export BOT_TOKEN='${{ secrets.BOT_TOKEN }}' && \
-                            export CLIENT_ID='${{ secrets.CLIENT_ID }}' && \
-                            export GUILD_ID='${{ secrets.GUILD_ID }}' && \
-                            /bin/bash ${REMOTE_SCRIPT_PATH}"
+        EC2_SHELL_COMMAND="export BOT_TOKEN=\"${{ secrets.BOT_TOKEN }}\" && \
+                           export CLIENT_ID=\"${{ secrets.CLIENT_ID }}\" && \
+                           export GUILD_ID=\"${{ secrets.GUILD_ID }}\" && \
+                           /bin/bash ${REMOTE_SCRIPT_PATH}"
 
+        # Use jq to construct the JSON string for the --parameters argument.
+        # jq will automatically handle all necessary JSON escaping for the EC2_SHELL_COMMAND.
+        # This results in: '{"commands": ["<your_escaped_shell_command>"]}'
+        JSON_PARAMETERS=$(jq -n \
+          --arg cmd "$EC2_SHELL_COMMAND" \
+          '{"commands": [$cmd]}' \
+        )
+        echo "Generated JSON Parameters: $JSON_PARAMETERS" # For debugging
         COMMAND_ID=$(aws ssm send-command \
           --instance-ids ${{ env.INSTANCE_ID }} \
           --document-name "AWS-RunShellScript" \
-          --parameters "commands=${DEPLOYMENT_COMMAND}" \
+          --parameters "$JSON_PARAMETERS" \
           --timeout-seconds 600 \
           --comment "Deploying Discord Bot from GitHub Actions" \
           --query "Command.CommandId" \
           --output text)
-
         echo "SSM Command ID: $COMMAND_ID"
         echo "::set-output name=command_id::$COMMAND_ID"
-      shell: bash 
+      shell: bash
 
     - name: Wait for and Check SSM Command Output
       id: ssm_output_check
@@ -120,7 +102,6 @@ jobs:
             --instance-id "$INSTANCE_ID" \
             --query "CommandInvocations[0].Status" \
             --output text)
-
           if [ "$STATUS" == "Success" ]; then
             echo "SSM Command completed successfully."
             break
