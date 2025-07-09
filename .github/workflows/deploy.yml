@@ -84,7 +84,7 @@ jobs:
           --query "Command.CommandId" \
           --output text)
         echo "SSM Command ID: $COMMAND_ID"
-        echo "{command_id}={$COMMAND_ID}" >> $GITHUB_OUTPUT
+        echo "COMMAND_ID=$COMMAND_ID" >> $GITHUB_ENV
       shell: bash
 
     - name: Wait for and Check SSM Command Output
