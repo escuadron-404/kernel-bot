@@ -6,7 +6,16 @@ const {
 } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
-const reposFile = path.join(__dirname, "..", "..", "..", ".data", "repos.json");
+const dataDir = path.join(__dirname, "..", "..", "..", ".data");
+const reposFile = path.join(dataDir, "repos.json");
+
+if (!fs.existsSync(dataDir)) {
+	fs.mkdirSync(dataDir, { recursive: true });
+}
+
+if (!fs.existsSync(reposFile)) {
+	fs.writeFileSync(reposFile, "[]", "utf8");
+}
 
 const categorias = {
 	1: "frontend",
