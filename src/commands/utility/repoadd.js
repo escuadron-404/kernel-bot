@@ -1,7 +1,7 @@
 const { SlashCommandBuilder } = require("discord.js");
 const fs = require("fs");
 const path = require("path");
-const reposFile = path.join(__dirname, "..", "..", "..", "data", "repos.json");
+const reposFile = path.join(__dirname, "..", "..", "..", ".data", "repos.json");
 
 module.exports = {
 	data: new SlashCommandBuilder()
