@@ -13,7 +13,7 @@ module.exports = {
 		.addBooleanOption((option) =>
 			option
 				.setName("guild")
-				.setDescription("¿Mostrar el avatar del servido?")
+				.setDescription("¿Mostrar el avatar del servidor?")
 				.setRequired(false),
 		),
 	async execute(interaction) {
