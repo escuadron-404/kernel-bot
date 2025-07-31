@@ -9,7 +9,7 @@ module.exports = {
 			return;
 		}
 		if (COFFEE_KEYWORDS.test(message.content)) {
-			message.channel.send("HTTP/1.1 418 I'm a teapot");
+			message.channel.send("`HTTP/1.1` **418** I'm a teapot");
 			console.log(
 				`Detected coffee talk from ${message.author.tag} in #${message.channel.name}. Sent '418 I'm a teapot'.`,
 			);
