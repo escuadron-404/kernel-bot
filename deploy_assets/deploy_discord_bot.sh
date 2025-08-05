@@ -50,6 +50,7 @@ su - ec2-user -c "
   echo \"DISCORD_TOKEN=$DISCORD_TOKEN\" >.env
   echo \"CLIENT_ID=$CLIENT_ID\" >>.env
   echo \"GUILD_ID=$GUILD_ID\" >>.env
+  echo \"OFFERS_CHANNEL_ID=$OFFERS_CHANNEL_ID\" >>.env
   echo \"DISCORD_BOT_WEB_PORT=$DISCORD_BOT_WEB_PORT\" >>.env
   echo \"Environment variables for Discord bot updated.\"
 

@@ -65,6 +65,7 @@ jobs:
         EC2_SHELL_COMMAND="export DISCORD_TOKEN=\"${{ secrets.DISCORD_TOKEN }}\" && \
                            export CLIENT_ID=\"${{ secrets.CLIENT_ID }}\" && \
                            export GUILD_ID=\"${{ secrets.GUILD_ID }}\" && \
+                           export OFFERS_CHANNEL_ID=\"${{ secrets.OFFERS_CHANNEL_ID }}\" && \
                            /bin/bash ${REMOTE_SCRIPT_PATH}"
 
         # Use jq to construct the JSON string for the --parameters argument.
