@@ -1,37 +1,36 @@
-const { Events, MessageType, MessageFlags } = require("discord.js");
+const { Events } = require("discord.js");
 const COFFEE_KEYWORDS =
 	/\b(?:cafecito|cafetera|cafes|café|iced coffee|flat white|cold brew|drip coffee|turkish coffee|french press|clever dripper|coffee maker|coffee grinder|coffee beans|coffee grounds|coffee break|coffee shop|coffee pot|pour over|aeropress|cappuccino|percolator|americano|macchiato|cafetière|espresso|cortado|caffeine|affogato|ristretto|frappe|siphon|chemex|barista|arabica|robusta|greca|geisha|decaf|latte|mocha|lungo|kaffe|moka|café|cafe|coffee|beans|bean|brew|roast|kalua)\b/i;
 
 const JOB_OFFER_FORMAT = `
 \`\`\`
-:sparkles::briefcase: OFERTA DE EMPLEO :briefcase::sparkles:
+✨💼 OFERTA DE EMPLEO 💼✨
 
-**[1] :dart: Puesto:** [Título del Puesto]
-**[2] :office: Empresa/Cliente:** [Nombre de Empresa o "Individual"]
-**[3] :handshake: Contratación:** [Tiempo Completo / Medio Tiempo / Contrato / Freelance / Gig]
-**[4] :round_pushpin: Ubicación:** [Remoto / Ciudad, País / Presencial / Híbrido]
-**[5] :alarm_clock: Zona Horaria Requerido:** [Ej. PST / EST / GMT+1 / Flexible]
+**[1] 🎯 Puesto:** [Título del Puesto]
+**[2] 🏢 Empresa/Cliente:** [Nombre de Empresa o "Individual"]
+**[3] 🤝 Contratación:** [Tiempo Completo / Medio Tiempo / Contrato / Freelance / Gig]
+**[4] 📍 Ubicación:** [Remoto / Ciudad, País / Presencial / Híbrido]
+**[5] ⏰ Zona Horaria Requerido:** [Ej. PST / EST / GMT+1 / Flexible]
 
-**[6] :pencil: Descripción:**
+**[6] 📝 Descripción:**
 [Descripción breve del rol o proyecto. ¿Qué problema resuelve? Objetivos principales. Máx. 2-4 frases.]
 
-**[7] :white_check_mark: Responsabilidades:**
+**[7] ✅ Responsabilidades:**
 - [Tareas específicas a realizar.]
 - [Claro y conciso.]
 - [Usa viñetas.]
 - [Ej. Gestionar Discord, Desarrollar web, Crear gráficos]
 
-**[8] :brain: Habilidades/Requisitos:**
+**[8] 🧠 Habilidades/Requisitos:**
 - [Habilidades, experiencia o cualificaciones obligatorias.]
-- [Ej. X años con Y, dominio Z, buena comunicación.]
 
-**[9] :moneybag: Compensación:**
+**[9] 💰 Compensación:**
 [Ej. $X/hora, $Y tarifa fija, $Z/mes, Salario+Equity, Negociable (rango).]
 
-**[10] :calendar_spiral: Fecha Límite:**
+**[10] 🗓 Fecha Límite:**
 [Fecha, Hora, Zona Horaria (ej. 2024-12-31 17:00 EST) o "Abierta"]
 
-**[11] :e_mail: Postulación:**
+**[11] 📧 Postulación:**
 [Instrucciones claras: "DM @usuario", "Email a correo@ejemplo.com", "Link: https://tu.link"]
 \`\`\`
 `;
@@ -43,54 +42,131 @@ module.exports = {
 			return;
 		}
 
+		// Coffee keyword detection (unchanged)
 		if (COFFEE_KEYWORDS.test(message.content)) {
 			message.channel.send("`HTTP/1.1` **418** I'm a teapot");
 			console.log(
-				`Detected coffee talk from ${message.author.tag} in #${message.channel.name}. Sent '418 I'm a teapot'.`,
+				`Se detectó una conversación sobre café de ${message.author.tag} en #${message.channel.name}. Se envió '418 I'm a teapot'.`,
 			);
 		}
 
+		// Job Offers channel logic
 		if (message.channelId == process.env.OFFERS_CHANNEL_ID) {
-			if (
-				!(
-					(message.type == MessageType.ThreadStarterMessage &&
-						isOffer(message.content)) ||
-					message.hasThread ||
-					message.type == MessageType.ThreadCreated
-				)
-			) {
-				const authorId = message.author.id;
-				const originalMessageContent = message.content;
+			const isMessageAnOffer = isOffer(message.content);
+			const mentionedRolesWithMagnifier = message.mentions.roles.filter(
+				(role) => role.name.startsWith("🔍 | "),
+			);
 
-				message
-					.delete()
-					.then(async () => {
-						const rejectionMessageContent = `
-¡Hola <@${authorId}>! Tu mensaje ha sido eliminado en el canal de ofertas.
+			// First, try to handle valid offers by creating a thread
+			if (isMessageAnOffer) {
+				let threadName;
+				let roleUsedForThreadName = null; // To track if a magnifier role was used for naming
 
-Para publicar una oferta de empleo, debes iniciar un nuevo hilo (**¡IMPORTANTE! Si el mensaje que envías no inicia un hilo, será eliminado.**) y seguir estrictamente el formato:
+				if (mentionedRolesWithMagnifier.size > 0) {
+					const role = mentionedRolesWithMagnifier.first();
+					const cleanedRoleName = role.name.replace("🔍 | ", "").trim();
+					threadName = `Oferta | ${cleanedRoleName}`;
+					roleUsedForThreadName = role; // Store the role that was used
+				} else {
+					threadName = `Oferta de Empleo`; // Generic name if no specific role mentioned
+				}
+
+				try {
+					await message.startThread({
+						name: threadName,
+						autoArchiveDuration: 60 * 24, // Archive after 24 hours of inactivity
+						reason: "Job offer posted and automatically threaded by bot.",
+					});
+					console.log(
+						`Se creó el hilo "${threadName}" para la oferta de empleo de ${message.author.tag}`,
+					);
+
+					// If thread was created successfully but no magnifier role was used for naming
+					if (!roleUsedForThreadName) {
+						const user = await message.client.users.fetch(message.author.id);
+						const suggestionDM = `
+¡Hola ${user}! Tu oferta ha sido publicada y se ha creado un hilo para ella.
+
+**Sugerencia para Mayor Visibilidad y Organización:**
+
+Para que tu oferta de empleo tenga aún más visibilidad y el hilo pueda nombrarse automáticamente (ej. "Oferta | Desarrollador Backend"), te recomendamos:
+*   Mencionar un rol relevante en tu mensaje (ej. \`@🔍 | Desarrollador Backend\`).
+*   Asegúrate de que el nombre de ese rol comience estrictamente con el emoji de lupa (🔍) seguido de " | " (espacio, barra vertical, espacio). Por ejemplo: \`@🔍 | Tu Rol\`.
+    Esto ayudará a organizar el canal y facilitará la búsqueda de ofertas específicas.
+
+¡Gracias!
+						`.trim();
+						try {
+							await user.send(suggestionDM);
+							console.log(
+								`Se envió un DM de sugerencia de rol de lupa a ${user.tag}`,
+							);
+						} catch (dmError) {
+							console.error(
+								`No se pudo enviar el DM de sugerencia a ${message.author.id}:`,
+								dmError,
+							);
+						}
+					}
+					return; // Successfully handled the message by creating a thread, so exit.
+				} catch (error) {
+					console.error(
+						`No se pudo crear el hilo para el mensaje de ${message.author.tag}:`,
+						error,
+					);
+				}
+			}
+
+			const authorId = message.author.id;
+			message
+				.delete()
+				.then(async () => {
+					const user = await message.client.users.fetch(authorId);
+
+					const dmContentPart1 = `
+¡Hola ${user}! Tu mensaje ha sido eliminado en el canal de ofertas. Aquí está el formato correcto que debes usar:
 
 ${JOB_OFFER_FORMAT}
-						`.trim();
+					`.trim();
 
+					const dmContentPart2 = `
+**Instrucciones Importantes para Publicar tu Oferta:**
+
+Para que tu oferta sea publicada exitosamente:
+1.  **Usa el formato estrictamente:** Asegúrate de que tu mensaje contenga todos los puntos del 1 al 11 tal como se muestra en el formato de arriba.
+2.  **El bot creará el hilo automáticamente:** Una vez que envíes tu mensaje con el formato correcto, el bot generará un hilo para tu oferta. ¡No necesitas crear el hilo manualmente!
+
+**Sugerencia para Mayor Visibilidad y Organización:**
+
+Para que tu oferta de empleo tenga aún más visibilidad y el hilo pueda nombrarse automáticamente (ej. "Oferta | Desarrollador Backend"), te recomendamos:
+*   Mencionar un rol relevante en tu mensaje (ej. \`@🔍 | Desarrollador Backend\`).
+*   Asegúrate de que el nombre de ese rol comience estrictamente con el emoji de lupa (🔍) seguido de " | " (espacio, barra vertical, espacio). Por ejemplo: \`@🔍 | Tu Rol\`.
+    Esto ayudará a organizar el canal y facilitará la búsqueda de ofertas específicas.
+
+¡Gracias por tu comprensión!
+					`.trim();
+
+					try {
+						await user.send(dmContentPart1);
+						await user.send(dmContentPart2);
+						console.log(
+							`Se enviaron 2 DMs a ${user.tag} sobre el mensaje de oferta eliminado.`,
+						);
+					} catch (dmError) {
+						console.error(`No se pudo enviar el DM a ${authorId}:`, dmError);
+						// Fallback: If DMs cannot be sent (e.g., user blocked DMs), send a public message in the channel
 						await message.channel
 							.send({
-								content: rejectionMessageContent,
-								flags: MessageFlags.Ephemeral,
+								content: `¡Hola <@${authorId}>! Tu mensaje fue eliminado. No pude enviarte un DM. Por favor, revisa tus configuraciones de privacidad para recibir mensajes del bot. Para publicar, asegúrate de seguir el formato correcto.`,
 							})
-							.then(() =>
-								console.log(
-									`Replied to message "${originalMessageContent}" from <@${authorId}>`,
-								),
-							)
 							.catch(console.error);
+					}
 
-						console.log(
-							`Deleted message from ${authorId}. Reason: Not in thread and not valid offer in Offers channel`,
-						);
-					})
-					.catch(console.error);
-			}
+					console.log(
+						`Mensaje eliminado de ${authorId}. Razón: Formato inválido o fallo en la creación del hilo.`,
+					);
+				})
+				.catch(console.error);
 		}
 	},
 };
@@ -106,20 +182,19 @@ const isOffer = (messageContent) => {
 		return false;
 	}
 
-	const requiredHeader =
-		":sparkles::briefcase: OFERTA DE EMPLEO :briefcase::sparkles:";
+	const requiredHeader = "✨💼 OFERTA DE EMPLEO 💼✨";
 	const sectionHeaders = [
-		"**[1] :dart: Puesto:**",
-		"**[2] :office: Empresa/Cliente:**",
-		"**[3] :handshake: Contratación:**",
-		"**[4] :round_pushpin: Ubicación:**",
-		"**[5] :alarm_clock: Zona Horaria Requerido:**",
-		"**[6] :pencil: Descripción:**",
-		"**[7] :white_check_mark: Responsabilidades:**",
-		"**[8] :brain: Habilidades/Requisitos:**",
-		"**[9] :moneybag: Compensación:**",
-		"**[10] :calendar_spiral: Fecha Límite:**",
-		"**[11] :e_mail: Postulación:**",
+		"**[1] 🎯 Puesto:**",
+		"**[2] 🏢 Empresa/Cliente:**",
+		"**[3] 🤝 Contratación:**",
+		"**[4] 📍 Ubicación:**",
+		"**[5] ⏰ Zona Horaria Requerido:**",
+		"**[6] 📝 Descripción:**",
+		"**[7] ✅ Responsabilidades:**",
+		"**[8] 🧠 Habilidades/Requisitos:**",
+		"**[9] 💰 Compensación:**",
+		"**[10] 🗓 Fecha Límite:**",
+		"**[11] 📧 Postulación:**",
 	];
 
 	const escapeRegExp = (string) => {
@@ -133,6 +208,5 @@ const isOffer = (messageContent) => {
 	}
 
 	const fullRegex = new RegExp(`^${patternParts.join(".*?")}`, "s");
-	console.log(fullRegex);
-	return fullRegex.test(messageContent);
+	return messageContent.match(fullRegex) ? true : false;
 };
