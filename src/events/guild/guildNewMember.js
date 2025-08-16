@@ -6,7 +6,7 @@ module.exports = {
 		const welcomeChannel = "1389288057328500846";
 		if (channel) {
 			channel.send(
-				`Bienvenid@ ${member} al Escuadrón 404! no esperes y preséntate en <#${welcomeChannel}>🎉`,
+				`Bienvenid@ ${member} al Escuadrón 404! No esperes y preséntate en <#${welcomeChannel}>🎉`,
 			);
 		}
 	},
