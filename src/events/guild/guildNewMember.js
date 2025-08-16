@@ -3,7 +3,7 @@ module.exports = {
 	once: false, // runs every time a user joins
 	execute(member) {
 		const welcomeChannel = member.guild.systemChannel;
-		const presentationChannel = "1389288418764390611";
+		const presentationChannel = process.env.PRESENTATION_CHANNEL_ID;
 		if (welcomeChannel) {
 			welcomeChannel.send(
 				`Bienvenid@ ${member} al Escuadrón 404! No esperes y preséntate en <#${presentationChannel}> 🎉`,
